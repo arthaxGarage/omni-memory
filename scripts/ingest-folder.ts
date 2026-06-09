@@ -32,15 +32,16 @@ function collectFiles(dir: string, recursive: boolean): string[] {
   return files;
 }
 
-const [, , folderPath, flagOrType] = process.argv;
+const [, , folderPath, ...rest] = process.argv;
 
 if (!folderPath) {
   console.error("Usage: npx tsx scripts/ingest-folder.ts <folder> [--recursive] [terminal|chat|code]");
   process.exit(1);
 }
 
-const recursive = flagOrType === "--recursive";
-const explicitType = !recursive && flagOrType ? flagOrType : undefined;
+// --recursive and an explicit source type combine, in either order.
+const recursive = rest.includes("--recursive");
+const explicitType = rest.find((a) => a !== "--recursive");
 
 if (explicitType && !isSourceType(explicitType)) {
   console.error(`Invalid source type "${explicitType}". Use terminal, chat, or code.`);

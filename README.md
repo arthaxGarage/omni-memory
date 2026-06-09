@@ -22,7 +22,7 @@ Claude Code MCP ┘            │
   (shared insert path), `sql` (safe predicate builders), `maintenance` (compaction +
   retention), `types`.
 - **`src/mcp/index.ts`** — MCP server exposing `search_memory`, `save_memory`, `forget_memory`.
-- **`scripts/`** — `ingest`, `ingest-folder`, `query` CLIs.
+- **`scripts/`** — `ingest`, `ingest-folder`, `query`, `optimize`, `dedupe-existing` CLIs.
 
 ## Install on a new machine
 
@@ -40,7 +40,7 @@ cd omni-memory
 npm install
 ```
 
-### 2. Create the embedding model
+### 2. Pull the embedding model
 ```bash
 ollama pull nomic-embed-text
 ```
@@ -104,9 +104,17 @@ On **macOS**, the simplest equivalent is a `launchd` agent in
 The hub creates the LanceDB table on first start and self-maintains (daily compaction).
 
 ### 6. Register the MCP server in Claude Code
-So Claude can call `search_memory` / `save_memory` / `forget_memory`, add this to your
-`~/.claude/settings.json` (use the **absolute path to *your* clone's** `dist/mcp/index.js`,
-and the **same key** as `.env`):
+So Claude can call `search_memory` / `save_memory` / `forget_memory`, register the server
+at user scope (use the **absolute path to *your* clone's** `dist/mcp/index.js`, and the
+**same key** as `.env`):
+```bash
+claude mcp add omni-memory --scope user \
+  --env OMNI_API_KEY=omni-<the-generated-key> \
+  --env OMNI_HUB_URL=http://127.0.0.1:8000 \
+  -- node /path/to/omni-memory/dist/mcp/index.js
+```
+This writes the entry into `~/.claude.json`. To configure it by hand instead, add this
+under `mcpServers` in `~/.claude.json`:
 ```json
 {
   "mcpServers": {
@@ -181,6 +189,8 @@ All endpoints require header `X-API-Key: <key>`. Hub listens on `127.0.0.1:8000`
 - `source_type` / `source`: `terminal` \| `chat` \| `code`.
 - `importance`: `0`–`1` (default `0.5`); higher ranks earlier in `/query` results.
 - `tags`: matches memories containing **any** of the given tags.
+- `/remember` returns 400 when no chunk longer than 20 characters survives chunking —
+  write at least a full sentence.
 
 ## Development
 

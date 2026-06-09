@@ -30,6 +30,13 @@ rememberRouter.post("/", async (req, res, next) => {
     }
 
     const chunks = chunk(text, source_type);
+    if (chunks.length === 0) {
+      res.status(400).json({
+        error: "text too short to store — chunks of 20 characters or fewer are dropped",
+      });
+      return;
+    }
+
     const { insertedIds } = await storeChunks(chunks, source_type, {
       tags: Array.isArray(tags) ? tags : [],
       importance,

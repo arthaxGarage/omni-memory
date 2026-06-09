@@ -25,6 +25,10 @@ remember "use the --no-cache flag when the build picks up stale assets"
 ```
 No quotes required for simple text — just type after `remember`.
 
+> **Minimum length:** chunks of 20 characters or fewer are dropped, so very short
+> notes (e.g. `remember "test note"`) are rejected with a 400 — nothing is saved.
+> Write at least a full sentence.
+
 ### Search from the terminal
 ```powershell
 npx tsx scripts/query.ts "how do I filter accounts by status"
@@ -76,7 +80,7 @@ Auto-detected types: `.ts .tsx .js .jsx .py .cs .json .yaml .yml` → `code` | `
 
 Source types: `code` | `chat` | `terminal`
 
-Duplicate chunks (cosine similarity > 0.97) are skipped automatically.
+Duplicate chunks (cosine similarity ≥ 0.97) are skipped automatically.
 
 ---
 
@@ -95,6 +99,15 @@ npx tsx scripts/optimize.ts --days 1   # tighter prune
 ```
 Note: files newer than 7 days are never deleted regardless of `--days`, which is
 what makes the prune safe to run while an ingest is in progress.
+
+To collapse near-duplicate rows that are *already* in the table (e.g. stored before
+dedup existed), use the one-off sweep — dry run by default:
+```powershell
+npx tsx scripts/dedupe-existing.ts                          # preview only
+npx tsx scripts/dedupe-existing.ts --apply                  # actually delete
+npx tsx scripts/dedupe-existing.ts --apply --threshold 0.95 # looser match
+```
+The oldest row in each duplicate cluster is kept.
 
 ---
 
@@ -157,18 +170,20 @@ All endpoints require header `X-API-Key: <your key>`. Hub listens on `127.0.0.1:
 - `source_type` / `source`: `terminal` \| `chat` \| `code`.
 - `importance`: `0`–`1` (default `0.5`); higher ranks earlier in `/query` results.
 - `tags` filter matches memories containing **any** of the given tags.
+- `/remember` rejects text with a 400 if no chunk longer than 20 characters survives
+  chunking — short snippets are never silently dropped.
 
 Quick test from PowerShell:
 ```powershell
 $key = @{"X-API-Key"=$env:OMNI_KEY}   # set from your .env value
 
-# Save
+# Save (must be > 20 chars or the hub returns 400)
 Invoke-RestMethod http://127.0.0.1:8000/remember -Method POST -Headers $key `
   -ContentType "application/json" `
-  -Body '{"text":"test note","source_type":"chat"}'
+  -Body '{"text":"omni-memory smoke test: the hub stores and retrieves this note","source_type":"chat"}'
 
 # Query
-Invoke-RestMethod "http://127.0.0.1:8000/query?q=test+note&top_k=3" -Headers $key
+Invoke-RestMethod "http://127.0.0.1:8000/query?q=omni-memory+smoke+test&top_k=3" -Headers $key
 
 # Health
 Invoke-RestMethod http://127.0.0.1:8000/health -Headers $key
@@ -189,7 +204,9 @@ omni-memory/
 ├── scripts/
 │   ├── ingest.ts           # Ingest a single file
 │   ├── ingest-folder.ts    # Ingest all files in a folder
-│   └── query.ts            # CLI search
+│   ├── query.ts            # CLI search
+│   ├── optimize.ts         # Compact + prune old LanceDB versions
+│   └── dedupe-existing.ts  # One-off sweep of duplicates already stored
 ├── dist/                   # Compiled output (run: npm run build)
 ├── .env                    # API key, DB path, Ollama URL, port
 ├── install-service.ps1     # Register Task Scheduler task
@@ -199,7 +216,7 @@ omni-memory/
 Key paths:
 - **Database:** the `DB_PATH` from your `.env` (defaults to `~/.ai_memory/`)
 - **PowerShell profile:** `$PROFILE` (e.g. `~\Documents\PowerShell\Microsoft.PowerShell_profile.ps1`)
-- **Claude Code settings:** `~\.claude\settings.json`
+- **Claude Code MCP config:** `~\.claude.json` (user scope, written by `claude mcp add`)
 
 ---
 
@@ -246,7 +263,7 @@ ollama pull nomic-embed-text   # if missing
 
 **MCP tools not showing in Claude Code**
 - Restart Claude Code (the MCP config is read at startup)
-- Confirm the entry exists: `Get-Content ~\.claude\settings.json | Select-String omni`
+- Confirm the entry exists: `claude mcp list` (or `Get-Content ~\.claude.json | Select-String omni`)
 - Make sure the hub is running before starting Claude Code
 
 **`remember` not found in terminal**
@@ -258,8 +275,8 @@ Test-Path $PROFILE
 ```
 
 **Unauthorised errors**
-The API key in `.env`, `settings.json`, and `$PROFILE` must all match. The key
+The API key in `.env`, the MCP config, and `$PROFILE` must all match. The key
 lives only in `.env` (gitignored) — don't paste the literal value into docs or commits.
 - `.env` → `OMNI_API_KEY=`
-- `~\.claude\settings.json` → `mcpServers.omni-memory.env.OMNI_API_KEY`
+- `~\.claude.json` → `mcpServers.omni-memory.env.OMNI_API_KEY`
 - `$PROFILE` → `$env:OMNI_KEY =`

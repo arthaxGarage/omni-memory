@@ -55,5 +55,6 @@ Start-ScheduledTask -TaskName $taskName
 Start-Sleep -Seconds 3
 $state = (Get-ScheduledTask -TaskName $taskName).State
 Write-Host "Task '$taskName' registered and started. State: $state"
-Write-Host 'To stop:      Stop-ScheduledTask -TaskName OmniMemory'
-Write-Host 'To uninstall: Unregister-ScheduledTask -TaskName OmniMemory -Confirm:$false'
+Write-Host 'To stop: kill the node listening on port 8000 (Stop-ScheduledTask does NOT stop it — node runs detached):'
+Write-Host '  Get-NetTCPConnection -LocalPort 8000 -State Listen | % { Stop-Process -Id $_.OwningProcess -Force }'
+Write-Host 'To uninstall: run the stop command above, then: Unregister-ScheduledTask -TaskName OmniMemory -Confirm:$false'
