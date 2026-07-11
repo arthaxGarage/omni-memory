@@ -110,6 +110,27 @@ cp ~/.ai_memory/memories.db /path/to/backups/
 systemctl --user start omni-memory
 ```
 
+### Migrating from LanceDB
+
+If a machine still has data from the old LanceDB backend, copy it into SQLite with
+the one-off migration script. Vectors are copied as-is (nothing is re-embedded),
+ids are preserved, and re-running is idempotent - rows already in SQLite are skipped.
+LanceDB is no longer a project dependency, so install it just for this run:
+
+```powershell
+cd C:\path\to\omni-memory
+npm install --no-save "@lancedb/lancedb"
+npx tsx scripts/migrate-lancedb.ts $env:USERPROFILE\.ai_memory            # dry run
+npx tsx scripts/migrate-lancedb.ts $env:USERPROFILE\.ai_memory --apply    # migrate
+```
+
+The argument is the old `DB_PATH` (the folder containing `memories.lance/`); the old
+table and the new `memories.db` can share that folder without conflict. Afterwards,
+verify with `npx tsx scripts/query.ts <something you remember>`, then archive or
+delete the `memories.lance` folder and reinstall clean deps with `npm ci`.
+
+### Deduplicating existing rows
+
 To collapse near-duplicate rows that are *already* in the table (e.g. stored before
 dedup existed), use the one-off sweep — dry run by default:
 ```powershell
