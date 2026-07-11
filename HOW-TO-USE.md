@@ -46,6 +46,12 @@ After starting a Claude Code session, just ask naturally:
 Claude will call `search_memory` automatically. You can also ask it to save something:
 > "Save this pattern to my memory"
 
+**Memory-first rule:** the global Claude Code instructions (`~/.claude/CLAUDE.md`)
+contain a standing rule to search omni-memory *before* answering questions, so Claude
+consults saved context proactively rather than only when asked. When setting up a new
+machine, add that rule to its `~/.claude/CLAUDE.md` too - MCP registration alone only
+makes the tools available; the rule is what makes Claude reach for them first.
+
 ---
 
 ## Ingesting Files
