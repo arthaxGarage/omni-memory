@@ -1,7 +1,7 @@
 {
   "name": "omni-memory",
   "version": "1.0.0",
-  "description": "Local-first vector memory for Claude Code: an MCP server + Express hub over LanceDB and Ollama. Your data never leaves your machine.",
+  "description": "Local-first vector memory for Claude Code: an MCP server + Express hub over SQLite (sqlite-vec) and Ollama. Your data never leaves your machine.",
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
@@ -12,7 +12,7 @@
   "keywords": [
     "mcp",
     "vector-search",
-    "lancedb",
+    "sqlite-vec",
     "ollama",
     "memory"
   ],
