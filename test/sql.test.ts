@@ -1,34 +1,40 @@
 import { describe, it, expect } from "vitest";
-import { sqlString, tagFilter, andWhere, parseTags } from "../src/lib/sql.js";
+import { buildFilters, parseTags } from "../src/lib/sql.js";
 
-describe("sqlString", () => {
-  it("wraps and escapes single quotes (injection guard)", () => {
-    expect(sqlString("code")).toBe("'code'");
-    expect(sqlString("' OR '1'='1")).toBe("''' OR ''1''=''1'");
-  });
-});
-
-describe("tagFilter", () => {
-  it("builds an array_has_any predicate from quoted tags", () => {
-    expect(tagFilter(["a", "b"])).toBe("array_has_any(tags, ['a', 'b'])");
+describe("buildFilters", () => {
+  it("returns an empty clause when no filters are given", () => {
+    expect(buildFilters({})).toEqual({ where: "", params: [] });
+    expect(buildFilters({ tags: [] })).toEqual({ where: "", params: [] });
   });
 
-  it("escapes quotes inside tags", () => {
-    expect(tagFilter(["o'brien"])).toBe("array_has_any(tags, ['o''brien'])");
-  });
-});
-
-describe("andWhere", () => {
-  it("joins non-empty clauses with AND and parenthesizes", () => {
-    expect(andWhere("a = 1", "b = 2")).toBe("(a = 1) AND (b = 2)");
+  it("binds source as a parameter", () => {
+    expect(buildFilters({ source: "code" })).toEqual({
+      where: "WHERE (source_type = ?)",
+      params: ["code"],
+    });
   });
 
-  it("drops falsy clauses", () => {
-    expect(andWhere("a = 1", undefined, false, "")).toBe("(a = 1)");
+  it("builds a json_each any-of predicate with one placeholder per tag", () => {
+    const { where, params } = buildFilters({ tags: ["a", "b"] });
+    expect(where).toBe(
+      "WHERE (EXISTS (SELECT 1 FROM json_each(memories.tags) WHERE json_each.value IN (?, ?)))",
+    );
+    expect(params).toEqual(["a", "b"]);
   });
 
-  it("returns undefined when nothing is left", () => {
-    expect(andWhere(undefined, false)).toBeUndefined();
+  it("never interpolates values into the SQL (injection guard)", () => {
+    const hostile = "' OR '1'='1";
+    const { where, params } = buildFilters({ tags: [hostile] });
+    expect(where).not.toContain(hostile);
+    expect(params).toEqual([hostile]);
+  });
+
+  it("ANDs source and tag filters together", () => {
+    const { where, params } = buildFilters({ source: "chat", tags: ["x"] });
+    expect(where).toBe(
+      "WHERE (source_type = ?) AND (EXISTS (SELECT 1 FROM json_each(memories.tags) WHERE json_each.value IN (?)))",
+    );
+    expect(params).toEqual(["chat", "x"]);
   });
 });
 

@@ -1,8 +1,8 @@
 import { randomUUID } from "crypto";
 import { embed } from "./embed.js";
-import { getTable } from "./db.js";
+import { insertMemory, nearestDistance } from "./db.js";
 import { isDuplicate } from "./dedupe.js";
-import type { SourceType, SearchRow } from "./types.js";
+import type { SourceType } from "./types.js";
 
 export interface StoreOptions {
   tags?: string[];
@@ -27,41 +27,30 @@ export async function storeChunks(
   sourceType: SourceType,
   opts: StoreOptions = {},
 ): Promise<StoreResult> {
-  const table = await getTable();
   const insertedIds: string[] = [];
   let skipped = 0;
 
   for (const c of chunks) {
     const vector = await embed(c);
 
-    try {
-      const nearby = (await table
-        .vectorSearch(vector)
-        .distanceType("cosine")
-        .limit(1)
-        .toArray()) as SearchRow[];
-      if (nearby.length > 0 && isDuplicate(nearby[0]._distance ?? 1)) {
-        skipped++;
-        opts.onProgress?.("skipped");
-        continue;
-      }
-    } catch {
-      // Empty table on first insert — nothing to dedup against.
+    const distance = nearestDistance(vector);
+    if (distance !== null && isDuplicate(distance)) {
+      skipped++;
+      opts.onProgress?.("skipped");
+      continue;
     }
 
     const id = randomUUID();
-    await table.add([
-      {
-        id,
-        text: c,
-        vector,
-        timestamp: new Date().toISOString(),
-        source_type: sourceType,
-        tags: opts.tags ?? [],
-        importance: opts.importance ?? 0.5,
-        source_path: opts.sourcePath ?? null,
-      },
-    ]);
+    insertMemory({
+      id,
+      text: c,
+      vector,
+      timestamp: new Date().toISOString(),
+      source_type: sourceType,
+      tags: opts.tags ?? [],
+      importance: opts.importance ?? 0.5,
+      source_path: opts.sourcePath ?? null,
+    });
     insertedIds.push(id);
     opts.onProgress?.("inserted");
   }

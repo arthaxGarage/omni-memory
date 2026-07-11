@@ -6,7 +6,6 @@ import { rememberRouter } from "./routes/remember.js";
 import { queryRouter } from "./routes/query.js";
 import { listRouter } from "./routes/list.js";
 import { forgetRouter } from "./routes/forget.js";
-import { optimizeMemories } from "./lib/maintenance.js";
 
 config({ quiet: true });
 
@@ -29,24 +28,6 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: "internal error", message: String(err instanceof Error ? err.message : err) });
 });
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-// Periodically compact the table and prune versions older than 7 days.
-// Failures are logged and swallowed — maintenance must never crash the hub.
-function scheduleMaintenance(): void {
-  const run = async () => {
-    try {
-      const stats = await optimizeMemories();
-      console.log("[omni-memory] optimize complete:", JSON.stringify(stats));
-    } catch (err) {
-      console.error("[omni-memory] optimize failed:", err);
-    }
-  };
-  setTimeout(run, 60_000).unref();
-  setInterval(run, DAY_MS).unref();
-}
-
 app.listen(PORT, "127.0.0.1", () => {
   console.log(`omni-memory hub listening on http://127.0.0.1:${PORT}`);
-  scheduleMaintenance();
 });

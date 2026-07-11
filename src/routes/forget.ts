@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { getTable } from "../lib/db.js";
+import { deleteMemory } from "../lib/db.js";
 
 export const forgetRouter = Router();
 
-// RFC 4122 UUID (any version). Guards the LanceDB delete predicate against injection.
+// RFC 4122 UUID (any version) — the only id format /remember ever hands out.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 forgetRouter.delete("/", async (req, res, next) => {
@@ -15,8 +15,7 @@ forgetRouter.delete("/", async (req, res, next) => {
       return;
     }
 
-    const table = await getTable();
-    await table.delete(`id = '${id}'`);
+    deleteMemory(id);
     res.json({ status: "ok", id });
   } catch (err) {
     next(err);

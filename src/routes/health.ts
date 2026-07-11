@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getTable } from "../lib/db.js";
+import { countMemories } from "../lib/db.js";
 import { embed } from "../lib/embed.js";
 
 export const healthRouter = Router();
@@ -11,8 +11,7 @@ healthRouter.get("/", async (_req, res) => {
   };
 
   try {
-    const table = await getTable();
-    out.count = await table.countRows();
+    out.count = countMemories();
   } catch (err) {
     res.status(500).json({ status: "error", ollama: "unknown", message: String(err) });
     return;

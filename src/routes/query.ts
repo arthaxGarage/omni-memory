@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { embed } from "../lib/embed.js";
-import { getTable } from "../lib/db.js";
-import { isSourceType, IMPORTANCE_WEIGHT, type SearchRow } from "../lib/types.js";
-import { sqlString, tagFilter, andWhere, parseTags } from "../lib/sql.js";
+import { searchMemories } from "../lib/db.js";
+import { isSourceType, IMPORTANCE_WEIGHT } from "../lib/types.js";
+import { parseTags } from "../lib/sql.js";
 
 export const queryRouter = Router();
 
@@ -28,22 +28,18 @@ queryRouter.get("/", async (req, res, next) => {
     const topK = Math.min(parseInt(top_k, 10) || 5, 20);
     const tagList = parseTags(tags);
 
-    const table = await getTable();
     const vector = await embed(q);
 
-    // Prefilter in the engine, then over-fetch so importance can re-rank.
-    let search = table.vectorSearch(vector).distanceType("cosine").limit(Math.min(topK * 4, 50));
-    const where = andWhere(
-      source ? `source_type = ${sqlString(source)}` : undefined,
-      tagList.length ? tagFilter(tagList) : undefined,
-    );
-    if (where) search = search.where(where);
-
-    const raw = (await search.toArray()) as SearchRow[];
+    // Filter in the engine, then over-fetch so importance can re-rank.
+    const raw = searchMemories(vector, {
+      limit: Math.min(topK * 4, 50),
+      source: source && isSourceType(source) ? source : undefined,
+      tags: tagList,
+    });
 
     const results = raw
       .map((r) => {
-        const similarity = r._distance != null ? 1 - r._distance : 0;
+        const similarity = 1 - r.distance;
         return {
           id: r.id,
           text: r.text,

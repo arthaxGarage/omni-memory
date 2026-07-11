@@ -8,9 +8,10 @@ PowerShell alias, or direct API calls.
 
 ## How It Works (One Paragraph)
 
-Save anything manually with `remember "..."` from any PowerShell terminal. Bulk-load code
+Save anything manually with `remember "..."` from any terminal. Bulk-load code
 files or notes using the ingest scripts. The Express hub (`127.0.0.1:8000`) handles all
-reads/writes to LanceDB via Ollama embeddings. Claude Code gets `search_memory`,
+reads/writes to a local SQLite database (with the sqlite-vec extension) via Ollama
+embeddings. Claude Code gets `search_memory`,
 `save_memory`, and `forget_memory` tools via an MCP server, so Claude can retrieve relevant
 context automatically during your sessions.
 
@@ -34,7 +35,8 @@ No quotes required for simple text — just type after `remember`.
 npx tsx scripts/query.ts "how do I filter accounts by status"
 npx tsx scripts/query.ts "what was that OData pattern for currencies"
 ```
-Run from the project directory: `C:\path\to\omni-memory`
+Run from the project directory: `C:\path\to\omni-memory` (Windows) or
+`~/source/repos/omni-memory` (Linux).
 
 ### Search from Claude Code
 After starting a Claude Code session, just ask naturally:
@@ -86,19 +88,27 @@ Duplicate chunks (cosine similarity ≥ 0.97) are skipped automatically.
 
 ## Maintenance
 
-Every LanceDB write appends a new on-disk version. The hub keeps this in check
-automatically: it compacts the table and prunes versions older than **7 days**
-about 60 seconds after startup and then once every 24 hours. The current version
-is never removed, so a 7-day recovery window is always preserved.
+Storage is a single SQLite file (`memories.db` inside `DB_PATH`). It needs no
+compaction or pruning jobs. To inspect it, open it with any SQLite client (load
+the sqlite-vec extension for vector functions).
 
-Run it manually anytime (e.g. after a large ingest):
+To back it up, stop the hub first (the db runs in WAL mode, so copying only
+`memories.db` while the hub is writing can miss the latest changes), copy the
+file, then restart:
+
 ```powershell
-cd C:\path\to\omni-memory
-npx tsx scripts/optimize.ts            # 7-day retention (default)
-npx tsx scripts/optimize.ts --days 1   # tighter prune
+# Windows
+Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
+  ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+Copy-Item "$env:USERPROFILE\.ai_memory\memories.db" "D:\backups\memories.db"
+Start-ScheduledTask -TaskName OmniMemory
 ```
-Note: files newer than 7 days are never deleted regardless of `--days`, which is
-what makes the prune safe to run while an ingest is in progress.
+```bash
+# Linux
+systemctl --user stop omni-memory
+cp ~/.ai_memory/memories.db /path/to/backups/
+systemctl --user start omni-memory
+```
 
 To collapse near-duplicate rows that are *already* in the table (e.g. stored before
 dedup existed), use the one-off sweep — dry run by default:
@@ -112,6 +122,21 @@ The oldest row in each duplicate cluster is kept.
 ---
 
 ## Service Management
+
+### Linux (systemd user service)
+
+The hub runs as the systemd user service **omni-memory**
+(`~/.config/systemd/user/omni-memory.service`), started at login. Lingering is
+enabled (`loginctl enable-linger`), so it also starts at boot without a login.
+
+```bash
+systemctl --user status omni-memory     # check
+systemctl --user restart omni-memory    # restart (e.g. after npm run build)
+systemctl --user stop omni-memory       # stop
+journalctl --user -u omni-memory -f     # follow logs
+```
+
+### Windows (Task Scheduler)
 
 The hub runs as a Windows Task Scheduler task named **OmniMemory**. It starts automatically
 10 seconds after you log in.
@@ -205,7 +230,6 @@ omni-memory/
 │   ├── ingest.ts           # Ingest a single file
 │   ├── ingest-folder.ts    # Ingest all files in a folder
 │   ├── query.ts            # CLI search
-│   ├── optimize.ts         # Compact + prune old LanceDB versions
 │   └── dedupe-existing.ts  # One-off sweep of duplicates already stored
 ├── dist/                   # Compiled output (run: npm run build)
 ├── .env                    # API key, DB path, Ollama URL, port
@@ -214,7 +238,7 @@ omni-memory/
 ```
 
 Key paths:
-- **Database:** the `DB_PATH` from your `.env` (defaults to `~/.ai_memory/`)
+- **Database:** `memories.db` inside the `DB_PATH` from your `.env` (defaults to `~/.ai_memory/`)
 - **PowerShell profile:** `$PROFILE` (e.g. `~\Documents\PowerShell\Microsoft.PowerShell_profile.ps1`)
 - **Claude Code MCP config:** `~\.claude.json` (user scope, written by `claude mcp add`)
 
@@ -222,9 +246,17 @@ Key paths:
 
 ## After Code Changes
 
-If you modify any `.ts` file in `src/`, rebuild and restart the service. Note the restart
-**kills the node on port 8000** — `Stop-ScheduledTask` alone leaves the old (pre-build)
-process running, so your changes wouldn't take effect:
+If you modify any `.ts` file in `src/`, rebuild and restart the service.
+
+**Linux:**
+```bash
+cd ~/source/repos/omni-memory
+npm run build
+systemctl --user restart omni-memory
+```
+
+**Windows** - note the restart **kills the node on port 8000** — `Stop-ScheduledTask`
+alone leaves the old (pre-build) process running, so your changes wouldn't take effect:
 
 ```powershell
 cd C:\path\to\omni-memory
@@ -241,6 +273,8 @@ Start-ScheduledTask -TaskName OmniMemory
 ## Troubleshooting
 
 **Hub not responding**
+
+Windows:
 ```powershell
 # Check if the task is running
 Get-ScheduledTask -TaskName OmniMemory | Select-Object State
@@ -254,11 +288,22 @@ Invoke-RestMethod http://127.0.0.1:8000/health -Headers @{"X-API-Key"=$env:OMNI_
 node C:\path\to\omni-memory\dist\server.js
 ```
 
+Linux:
+```bash
+systemctl --user status omni-memory        # check state
+journalctl --user -u omni-memory -n 50     # recent logs
+curl -H "X-API-Key: $OMNI_KEY" http://127.0.0.1:8000/health
+
+# If still failing, run directly to see the error
+node ~/source/repos/omni-memory/dist/server.js
+```
+
 **Ollama not available**
 ```powershell
 ollama list              # should show nomic-embed-text
 ollama pull nomic-embed-text   # if missing
-# Ollama auto-starts as a tray app on login — check system tray
+# Windows: Ollama auto-starts as a tray app on login — check system tray
+# Linux: systemctl status ollama
 ```
 
 **MCP tools not showing in Claude Code**
@@ -268,15 +313,19 @@ ollama pull nomic-embed-text   # if missing
 
 **`remember` not found in terminal**
 ```powershell
-# Reload the profile manually
+# Windows: reload the profile manually
 . $PROFILE
 # Or check if the profile file exists
 Test-Path $PROFILE
 ```
+```bash
+# Linux: reload the shell config
+source ~/.bashrc
+```
 
 **Unauthorised errors**
-The API key in `.env`, the MCP config, and `$PROFILE` must all match. The key
+The API key in `.env`, the MCP config, and your shell profile must all match. The key
 lives only in `.env` (gitignored) — don't paste the literal value into docs or commits.
 - `.env` → `OMNI_API_KEY=`
-- `~\.claude.json` → `mcpServers.omni-memory.env.OMNI_API_KEY`
-- `$PROFILE` → `$env:OMNI_KEY =`
+- `~/.claude.json` → `mcpServers.omni-memory.env.OMNI_API_KEY`
+- `$PROFILE` (Windows) → `$env:OMNI_KEY =` | `~/.bashrc` (Linux) → `export OMNI_KEY=`

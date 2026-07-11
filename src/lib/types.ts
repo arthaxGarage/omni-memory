@@ -21,8 +21,8 @@ export interface MemoryRow {
   source_path: string | null;
 }
 
-/** A row returned from a LanceDB vector search (adds `_distance`). */
-export type SearchRow = MemoryRow & { _distance?: number };
+/** A row returned from a vector search: no bulky vector, plus cosine distance. */
+export type SearchRow = Omit<MemoryRow, "vector"> & { distance: number };
 
 export function isSourceType(v: unknown): v is SourceType {
   return typeof v === "string" && (SOURCE_TYPES as readonly string[]).includes(v);

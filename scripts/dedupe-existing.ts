@@ -1,5 +1,5 @@
 import { config } from "dotenv";
-import { getTable } from "../src/lib/db";
+import { allMemories, deleteMemory } from "../src/lib/db";
 import type { MemoryRow } from "../src/lib/types";
 
 config({ quiet: true });
@@ -29,12 +29,7 @@ function cosine(a: number[], b: number[]): number {
   return magA === 0 || magB === 0 ? 0 : dot / (Math.sqrt(magA) * Math.sqrt(magB));
 }
 
-const table = await getTable();
-const raw = (await table.query().toArray()) as MemoryRow[];
-// `.toArray()` hands back each vector as an Arrow Vector, not a JS array —
-// materialize to number[] so the cosine loop can index it.
-const rows = raw.map((r) => ({ ...r, vector: Array.from(r.vector as Iterable<number>) }));
-rows.sort((a, b) => a.timestamp.localeCompare(b.timestamp)); // oldest first = kept
+const rows = allMemories(); // already sorted oldest-first = kept
 
 console.log(`Scanning ${rows.length} rows for duplicates (cosine >= ${THRESHOLD})...`);
 
@@ -73,6 +68,5 @@ if (!APPLY) {
 }
 
 console.log(`\nDeleting ${deleted.size} row(s)...`);
-const ids = [...deleted].map((id) => `'${id}'`).join(", ");
-await table.delete(`id IN (${ids})`);
+for (const id of deleted) deleteMemory(id);
 console.log(`Done. ${rows.length - deleted.size} row(s) remain.`);
